@@ -1,48 +1,111 @@
-// URL to explain PHASER scene: https://rexrainbow.github.io/phaser3-rex-notes/docs/site/scene/
+﻿// URL to explain PHASER scene: https://rexrainbow.github.io/phaser3-rex-notes/docs/site/scene/
 
 export default class Game extends Phaser.Scene {
   constructor() {
     super("game");
   }
 
-  init() {
-    this.score = 0;
+  init(data) {
+    this.score = data.score ?? 0;
+    this.levelIndex = data.levelIndex ?? 0;
+    this.collectedItems = 0;
+    this.requiredItems = 5;
+    this.levels = ["map1", "mapa2"];
+    this.tilesetFile = "public/assets/suelo.png";
+    this.isLevelComplete = false;
   }
 
   preload() {
-    this.load.tilemapTiledJSON("map", "public/assets/tilemap/map.json");
-    this.load.image("tileset", "public/assets/texture.png");
+    // El mapa debe cargarse desde una ruta relativa dentro del proyecto web,
+    // no desde una ruta absoluta de Windows.
+    const levelKey = this.levels[this.levelIndex];
+    this.load.tilemapTiledJSON(levelKey, `public/assets/tilemap/${levelKey}.json`);
+    this.load.image("suelo", this.tilesetFile);
     this.load.image("star", "public/assets/star.png");
 
-    this.load.spritesheet("dude", "./public/assets/dude.png", {
+    this.load.spritesheet("dude", "public/assets/dude.png", {
       frameWidth: 32,
       frameHeight: 48,
     });
   }
 
   create() {
-    const map = this.make.tilemap({ key: "map" });
+    if (this.levelIndex >= this.levels.length) {
+      this.add.text(80, 200, "Â¡GANASTE TODO!", {
+        fontSize: "48px",
+        fill: "#ffffff",
+      });
+      this.add.text(80, 280, `Puntaje total: ${this.score}`, {
+        fontSize: "32px",
+        fill: "#ffffff",
+      });
+      return;
+    }
 
-    // Parameters are the name you gave the tileset in Tiled and then the key of the tileset image in
-    // Phaser's cache (i.e. the name you used in preload)
-    const tileset = map.addTilesetImage("tileset", "tileset");
+    const levelKey = this.levels[this.levelIndex];
+    console.log(`Creating level: ${levelKey} (index ${this.levelIndex})`);
+    const map = this.make.tilemap({ key: levelKey });
+    console.log(`Tilemap layers: ${map.layers.map(l => l.name).join(', ')}`);
+
+    // Debug: show tilesets present in the loaded map
+    console.log('Map tilesets (from JSON):', map.tilesets.map(t => t.name));
+
+    // Parameters are the tileset name from the Tiled JSON and the key of the tileset image loaded in Phaser.
+    const tilesetName = map.tilesets[0]?.name || "tile";
+    const tileset = map.addTilesetImage(tilesetName, "suelo", 32, 32, 0, 0);
+    console.log('Using tileset image key: suelo, tileset name in JSON:', tilesetName, { tileset });
 
     // Parameters: layer name (or index) from Tiled, tileset, x, y
-    const belowLayer = map.createLayer("Fondo", tileset, 0, 0);
-    const platformLayer = map.createLayer("Plataformas", tileset, 0, 0);
-    const objectsLayer = map.getObjectLayer("Objetos");
+    const worldLayer = map.createLayer("Capa de patrones 1", tileset, 0, 0);
+    const objectsLayer = map.getObjectLayer("Capa de Objetos 1");
+    console.log('World layer created:', !!worldLayer, 'objects layer count:', objectsLayer?.objects?.length ?? 0);
+    try {
+      const sampleTile = worldLayer.getTileAt(0, 0);
+      console.log('Sample tile at (0,0):', sampleTile);
+    } catch (e) {
+      console.warn('No sample tile available or error reading tile:', e);
+    }
+    if (!objectsLayer) {
+      console.error(`Object layer "Capa de Objetos 1" not found for ${levelKey}`);
+    }
+    console.log(`Objects in layer: ${objectsLayer?.objects?.length ?? 0}`);
 
-    // Find in the Object Layer, the name "dude" and get position
-    const spawnPoint = map.findObject(
-      "Objetos",
-      (obj) => obj.name === "player"
+    // Find in the Object Layer, the name "Player" and get position
+    const spawnPoint =
+      map.findObject("Capa de Objetos 1", (obj) => obj.name === "Player") || {
+        x: 32,
+        y: 32,
+      };
+
+    let finishPoint = map.findObject(
+      "Capa de Objetos 1",
+      (obj) => obj.name === "Finish"
     );
-    console.log("spawnPoint", spawnPoint);
+
+    if (!finishPoint && levelKey === "mapa2") {
+      const proposedX = spawnPoint.x + map.tileWidth;
+      finishPoint = {
+        x: proposedX <= map.widthInPixels - map.tileWidth ? proposedX : spawnPoint.x - map.tileWidth,
+        y: spawnPoint.y,
+      };
+      console.log(`Level 2 finish point placed near spawn: ${finishPoint.x}, ${finishPoint.y}`);
+    }
+
+    if (!finishPoint) {
+      console.warn(`Finish object not found for level ${levelKey}. Using fallback finish point.`);
+      finishPoint = {
+        x: map.widthInPixels - 64,
+        y: map.tileHeight,
+      };
+    }
 
     this.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, "dude");
-
+    this.player.setScale(0.7);
+    this.player.body.setSize(18, 28);
+    this.player.body.setOffset(7, 16);
     this.player.setBounce(0.2);
     this.player.setCollideWorldBounds(true);
+    this.player.body.setGravityY(300);
 
     this.anims.create({
       key: "left",
@@ -67,39 +130,47 @@ export default class Game extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    platformLayer.setCollisionByProperty({ esColisionable: true });
-    this.physics.add.collider(this.player, platformLayer);
+    worldLayer.setCollisionByExclusion([-1]);
+    this.physics.add.collider(this.player, worldLayer);
 
-    // tiles marked as colliding
-    /*
-    const debugGraphics = this.add.graphics().setAlpha(0.75);
-    platformLayer.renderDebug(debugGraphics, {
-      tileColor: null, // Color of non-colliding tiles
-      collidingTileColor: new Phaser.Display.Color(243, 134, 48, 255), // Color of colliding tiles
-      faceColor: new Phaser.Display.Color(40, 39, 37, 255), // Color of colliding face edges
-    });
-    */
-
-    // Create empty group of starts
+    // Create empty group of stars
     this.stars = this.physics.add.group();
 
-    // find object layer
-    // if type is "stars", add to stars group
     objectsLayer.objects.forEach((objData) => {
-      console.log(objData);
-      const { x = 0, y = 0, name, type } = objData;
-      switch (type) {
-        case "star": {
-          // add star to scene
-          // console.log("estrella agregada: ", x, y);
-          const star = this.stars.create(x, y, "star");
-          star.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
-          break;
-        }
+      const { x = 0, y = 0, name } = objData;
+      if (name === "Estrella") {
+        const star = this.stars.create(x, y, "star");
+        star.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
       }
     });
 
-    // add collision between player and stars
+    if (levelKey === "mapa2") {
+      const wallSize = map.tileWidth;
+      const mapW = map.widthInPixels;
+      const mapH = map.heightInPixels;
+      const invisibleWalls = [
+        this.add.rectangle(-wallSize / 2, mapH / 2, wallSize, mapH + wallSize).setOrigin(0.5).setVisible(false),
+        this.add.rectangle(mapW + wallSize / 2, mapH / 2, wallSize, mapH + wallSize).setOrigin(0.5).setVisible(false),
+        this.add.rectangle(mapW / 2, -wallSize / 2, mapW + wallSize, wallSize).setOrigin(0.5).setVisible(false),
+        this.add.rectangle(mapW / 2, mapH + wallSize / 2, mapW + wallSize, wallSize).setOrigin(0.5).setVisible(false),
+      ];
+      invisibleWalls.forEach((rect) => {
+        this.physics.add.existing(rect, true);
+        this.physics.add.collider(this.player, rect);
+        this.physics.add.collider(this.stars, rect);
+      });
+      console.log('Invisible map2 boundary created:', invisibleWalls.length);
+    }
+
+    if (finishPoint) {
+      const finish = this.add
+        .rectangle(finishPoint.x, finishPoint.y, 24, 24, 0x00ff00, 0.5)
+        .setOrigin(0.5, 0.5);
+      this.physics.add.existing(finish, true);
+      this.finishZone = finish;
+      this.physics.add.overlap(this.player, this.finishZone, this.handleFinish, null, this);
+    }
+
     this.physics.add.collider(
       this.player,
       this.stars,
@@ -107,12 +178,31 @@ export default class Game extends Phaser.Scene {
       null,
       this
     );
-    // add overlap between stars and platform layer
-    this.physics.add.collider(this.stars, platformLayer);
+    this.physics.add.collider(this.stars, worldLayer);
 
-    this.scoreText = this.add.text(16, 16, `Score: ${this.score}`, {
-      fontSize: "32px",
-      fill: "#000",
+    this.levelText = this.add.text(16, 16, `Nivel: ${this.levelIndex + 1}`, {
+      fontSize: "24px",
+      fill: "#ffffff",
+    });
+
+    this.scoreText = this.add.text(16, 46, `Score: ${this.score}`, {
+      fontSize: "24px",
+      fill: "#ffffff",
+    });
+
+    this.itemText = this.add.text(
+      16,
+      76,
+      `Estrellas: ${this.collectedItems}/${this.requiredItems}`,
+      {
+        fontSize: "24px",
+        fill: "#ffffff",
+      }
+    );
+
+    this.messageText = this.add.text(16, 106, "", {
+      fontSize: "20px",
+      fill: "#ffff00",
     });
   }
 
@@ -132,13 +222,43 @@ export default class Game extends Phaser.Scene {
       this.player.anims.play("turn");
     }
 
-    if (this.cursors.up.isDown) {
-      this.player.setVelocityY(-330);
+    if (this.cursors.up.isDown && this.player.body.blocked.down) {
+      this.player.setVelocityY(-380);
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.keyR)) {
-      console.log("Phaser.Input.Keyboard.JustDown(this.keyR)");
-      this.scene.restart();
+      console.log("Restarting current level", this.levelIndex);
+      this.scene.start("game", {
+        score: this.score,
+        levelIndex: this.levelIndex,
+      });
+    }
+  }
+
+  handleFinish() {
+    if (this.isLevelComplete) {
+      return;
+    }
+
+    if (this.collectedItems >= this.requiredItems) {
+      this.isLevelComplete = true;
+      this.messageText.setText("Â¡Nivel completado! Cargando siguiente nivel...");
+
+      this.time.delayedCall(1000, () => {
+        const nextLevel = this.levelIndex + 1;
+        if (nextLevel < this.levels.length) {
+          console.log(`Level complete. Starting next level ${nextLevel}`);
+          this.scene.start("game", {
+            score: this.score,
+            levelIndex: nextLevel,
+          });
+        } else {
+          this.messageText.setText(`Â¡Ganaste todo! Puntaje total: ${this.score}`);
+        }
+      });
+    } else {
+      const remaining = this.requiredItems - this.collectedItems;
+      this.messageText.setText(`Faltan ${remaining} estrellas para avanzar`);
     }
   }
 
@@ -146,7 +266,9 @@ export default class Game extends Phaser.Scene {
     star.disableBody(true, true);
 
     this.score += 10;
+    this.collectedItems += 1;
     this.scoreText.setText(`Score: ${this.score}`);
+    this.itemText.setText(`Estrellas: ${this.collectedItems}/${this.requiredItems}`);
 
     if (this.stars.countActive(true) === 0) {
       //  A new batch of stars to collect
@@ -156,3 +278,7 @@ export default class Game extends Phaser.Scene {
     }
   }
 }
+
+
+
+
