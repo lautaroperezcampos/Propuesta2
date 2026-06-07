@@ -93,10 +93,17 @@ export default class Game extends Phaser.Scene {
 
     if (!finishPoint) {
       console.warn(`Finish object not found for level ${levelKey}. Using fallback finish point.`);
-      finishPoint = {
-        x: map.widthInPixels - 64,
-        y: map.tileHeight,
-      };
+      if (levelKey === "Mapa3") {
+        finishPoint = {
+          x: map.widthInPixels - 64,
+          y: map.tileHeight * 2,
+        };
+      } else {
+        finishPoint = {
+          x: map.widthInPixels - 64,
+          y: map.tileHeight,
+        };
+      }
     }
 
     this.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, "dude");
@@ -229,7 +236,7 @@ export default class Game extends Phaser.Scene {
       this.player.anims.play("turn");
     }
 
-    if (this.isMap3 && this.keySpace.isDown) {
+    if (this.isMap3 && this.cursors.up.isDown) {
       this.player.setVelocityY(-240);
     } else if (this.cursors.up.isDown && this.player.body.blocked.down) {
       this.player.setVelocityY(-380);
