@@ -10,7 +10,7 @@ export default class Game extends Phaser.Scene {
     this.levelIndex = data.levelIndex ?? 0;
     this.collectedItems = 0;
     this.requiredItems = 5;
-    this.levels = ["map1", "mapa2"];
+    this.levels = ["map1", "mapa2", "Mapa3"];
     this.tilesetFile = "public/assets/suelo.png";
     this.isLevelComplete = false;
   }
@@ -106,6 +106,12 @@ export default class Game extends Phaser.Scene {
     this.player.setBounce(0.2);
     this.player.setCollideWorldBounds(true);
     this.player.body.setGravityY(300);
+    this.isMap3 = levelKey === "Mapa3";
+
+    // Camera follow and bounds for larger levels
+    this.cameras.main.startFollow(this.player);
+    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
 
     this.anims.create({
       key: "left",
@@ -128,6 +134,7 @@ export default class Game extends Phaser.Scene {
     });
 
     this.cursors = this.input.keyboard.createCursorKeys();
+    this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
     worldLayer.setCollisionByExclusion([-1]);
@@ -222,7 +229,9 @@ export default class Game extends Phaser.Scene {
       this.player.anims.play("turn");
     }
 
-    if (this.cursors.up.isDown && this.player.body.blocked.down) {
+    if (this.isMap3 && this.keySpace.isDown) {
+      this.player.setVelocityY(-240);
+    } else if (this.cursors.up.isDown && this.player.body.blocked.down) {
       this.player.setVelocityY(-380);
     }
 
